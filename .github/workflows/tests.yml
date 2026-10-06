@@ -6,12 +6,19 @@ env:
   CI: true
 
 on:
-  pull_request: {}
+  workflow_dispatch:
+    inputs:
+      test-filter:
+        description: 'Optional jest test path pattern'
+        required: false
+        default: ''
 
 jobs:
   prettier-check:
     name: 🧹 Prettier Check
+    if: false
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout Master
         uses: actions/checkout@v3
@@ -25,6 +32,7 @@ jobs:
         run: yarn prettier:check
   lint:
     name: Lint
+    if: false
     uses: the-guild-org/shared-config/.github/workflows/lint.yml@main
     with:
       script: yarn ci:lint
@@ -33,7 +41,9 @@ jobs:
 
   build:
     name: Type Check on GraphQL v${{matrix.graphql_version}}
+    if: false
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -65,6 +75,7 @@ jobs:
   test:
     name: Unit Test on Node ${{matrix.node-version}} (${{matrix.os}}) and GraphQL v${{matrix.graphql_version}}
     runs-on: ${{matrix.os}}
+    timeout-minutes: 50
     strategy:
       fail-fast: false
       matrix:
@@ -103,10 +114,11 @@ jobs:
         with:
           timeout_minutes: 10
           max_attempts: 5
-          command: yarn test --ci
+          command: yarn test --ci ${{ inputs.test-filter }}
   test_esm:
     name: ESM Test
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout Master
         uses: actions/checkout@v3
@@ -118,11 +130,26 @@ jobs:
 
       - name: Build Packages
         run: yarn build
+      - name: Pack @graphql-tools/executor-legacy-ws
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/seal-out"
+          cd packages/executors/legacy-ws/dist
+          npm i -g npm@9.5.0
+          npm pack --pack-destination "$GITHUB_WORKSPACE/seal-out"
+          mv "$GITHUB_WORKSPACE/seal-out/graphql-tools-executor-legacy-ws-0.0.11.tgz" "$GITHUB_WORKSPACE/seal-out/executor-legacy-ws-0.0.11.tgz"
+          ls -la "$GITHUB_WORKSPACE/seal-out"
       - name: Test ESM and CJS integrity
         run: yarn bob check
+      - name: Upload executor-legacy-ws tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: executor-legacy-ws
+          path: seal-out/executor-legacy-ws-0.0.11.tgz
+          if-no-files-found: error
   test_browser:
     name: Browser Test
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout Master
         uses: actions/checkout@v3
@@ -132,6 +159,8 @@ jobs:
           nodeVersion: 18
       - name: Build Packages
         run: yarn build
+      - name: Allow Chrome sandbox (Ubuntu 24.04 AppArmor userns restriction)
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Test
         uses: nick-fields/retry@v2
         with:

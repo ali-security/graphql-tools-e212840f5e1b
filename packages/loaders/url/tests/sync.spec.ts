@@ -5,7 +5,7 @@ import { UrlLoader } from '../src';
 describe('sync', () => {
   const loader = new UrlLoader();
   it('should handle introspection', () => {
-    const [{ schema }] = loader.loadSync(`https://swapi-graphql.netlify.app/.netlify/functions/index`, {});
+    const [{ schema }] = loader.loadSync(`https://swapi-graphql.netlify.app/graphql`, {});
     expect(schema).toBeInstanceOf(GraphQLSchema);
     expect(printSchemaWithDirectives(schema!).trim()).toMatchInlineSnapshot(`
       "schema {
@@ -1014,7 +1014,7 @@ describe('sync', () => {
     `);
   });
   it('should handle queries', () => {
-    const [{ schema }] = loader.loadSync(`https://swapi-graphql.netlify.app/.netlify/functions/index`, {});
+    const [{ schema }] = loader.loadSync(`https://swapi-graphql.netlify.app/graphql`, {});
     const result = graphqlSync({
       schema: schema!,
       source: /* GraphQL */ `
