@@ -1,5 +1,5 @@
 import '../../../testing/to-be-similar-gql-doc';
-import { SubscriptionProtocol, UrlLoader } from '../src/index.js';
+import { LoadFromUrlOptions, SubscriptionProtocol, UrlLoader } from '../src/index.js';
 import { ExecutionResult, printSchemaWithDirectives } from '@graphql-tools/utils';
 import { parse, print, introspectionFromSchema, getIntrospectionQuery, getOperationAST } from 'graphql';
 import { useServer } from 'graphql-ws/lib/use/ws';
@@ -458,6 +458,65 @@ describe('Schema URL Loader', () => {
 
     await asyncIterator.return!();
     subscriptionServer.close();
+  });
+  describe('legacy subscriptions-transport-ws TLS certificate validation', () => {
+    function createCapturingWebSocketImpl() {
+      const connectionOptions: Array<Record<string, any> | undefined> = [];
+      class CapturingWebSocket {
+        onopen: (() => void) | null = null;
+        onmessage: ((event: any) => void) | null = null;
+        constructor(_url: string, _protocol?: string | string[], options?: Record<string, any>) {
+          connectionOptions.push(options);
+        }
+
+        send() {}
+        terminate() {}
+      }
+      return {
+        webSocketImpl: CapturingWebSocket as unknown as LoadFromUrlOptions['webSocketImpl'],
+        connectionOptions,
+      };
+    }
+
+    async function subscribeWithLegacyWS(options: Omit<LoadFromUrlOptions, 'endpoint'>) {
+      const executor = loader.getExecutorAsync('https://untrusted.example.com/graphql', {
+        subscriptionsProtocol: SubscriptionProtocol.LEGACY_WS,
+        ...options,
+      });
+      const result = await executor({
+        document: parse(/* GraphQL */ `
+          subscription TestMessage {
+            testMessage {
+              number
+            }
+          }
+        `),
+      });
+      assertAsyncIterable(result);
+      await result[Symbol.asyncIterator]().return?.();
+    }
+
+    it('should reject unauthorized TLS certificates by default', async () => {
+      const { webSocketImpl, connectionOptions } = createCapturingWebSocketImpl();
+      await subscribeWithLegacyWS({
+        webSocketImpl,
+        connectionParams: {
+          authToken: 'secret-token',
+        },
+      });
+      expect(connectionOptions).toHaveLength(1);
+      expect(connectionOptions[0]?.['rejectUnauthorized']).toBe(true);
+    });
+
+    it('should allow opting out of TLS certificate validation', async () => {
+      const { webSocketImpl, connectionOptions } = createCapturingWebSocketImpl();
+      await subscribeWithLegacyWS({
+        webSocketImpl,
+        rejectUnauthorized: false,
+      });
+      expect(connectionOptions).toHaveLength(1);
+      expect(connectionOptions[0]?.['rejectUnauthorized']).toBe(false);
+    });
   });
   it('should handle subscriptions - graphql-sse', async () => {
     const testUrl = 'http://localhost:8081/graphql';
